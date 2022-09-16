@@ -1,5 +1,4 @@
 import * as THREE from "three"
-import { Vector3 } from "three";
 import { VRButton } from "./VRButton.js"
 import { XRControllerModelFactory } from './XRControllerModelFactory.js';
 
