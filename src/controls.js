@@ -2,7 +2,7 @@ import {
     Euler,
     EventDispatcher,
     Vector3
-} from 'three';
+} from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
 
 const _euler = new Euler(0, 0, 0, 'YXZ');
 const _vector = new Vector3();
