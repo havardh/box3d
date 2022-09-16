@@ -1,46 +1,81 @@
 import * as THREE from "three"
-import { PointerLockControls } from "./controls";
+import { Vector3 } from "three";
+import { VRButton } from "./VRButton.js"
+import { XRControllerModelFactory } from './XRControllerModelFactory.js';
 
 const scene = new THREE.Scene()
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
 
-camera.position.z = 0;
+camera.position.set(0, 0, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true })
-
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setClearColor("#ffffff")
-
-renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.xr.enabled = true;
 
 document.body.appendChild(renderer.domElement)
 
-const controls = new PointerLockControls(camera, document.body)
-document.addEventListener("click", () => {
-    if (controls.isLocked) {
-        controls.unlock()
+document.body.appendChild(VRButton.createButton(renderer));
 
-    } else {
-        controls.lock()
+
+const controller1 = renderer.xr.getController(1);
+controller1.addEventListener('connected', event => {
+    controller1.add(buildController(event.data))
+})
+scene.add(controller1)
+
+const controllerModelFactory = new XRControllerModelFactory();
+
+const controllerGrip1 = renderer.xr.getControllerGrip(1);
+controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+scene.add(controllerGrip1);
+
+
+function buildController(data) {
+    let geometry, material;
+
+    switch (data.targetRayMode) {
+
+        case 'tracked-pointer':
+
+            geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, - 1], 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute([0.5, 0.5, 0.5, 0, 0, 0], 3));
+
+            material = new THREE.LineBasicMaterial({ vertexColors: true, blending: THREE.AdditiveBlending });
+
+            return new THREE.Line(geometry, material);
+
+        case 'gaze':
+
+            geometry = new THREE.RingGeometry(0.02, 0.04, 32).translate(0, 0, - 1);
+            material = new THREE.MeshBasicMaterial({ opacity: 0.5, transparent: true });
+            return new THREE.Mesh(geometry, material);
+
     }
 
-})
-controls.addEventListener('lock', function () {
+    return new THREE.Mesh()
 
-    //menu.style.display = 'none';
+}
 
-});
 
-controls.addEventListener('unlock', function () {
 
-    //menu.style.display = 'block';
+function onWindowResize() {
 
-});
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
 
-const clock = new THREE.Clock()
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+}
+
+window.addEventListener('resize', onWindowResize);
 
 function box({ x, y, z }) {
-    const geometry = new THREE.BoxGeometry(1, 1, 1)
+    const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5)
     const material = new THREE.MeshBasicMaterial({ color: "#433F81" })
     const cube = new THREE.Mesh(geometry, material)
 
@@ -108,27 +143,49 @@ const puller = pull({ x: 0, y: -3, z: -10 })
 scene.add(puller)
 
 const pusher = push({ x: 0, y: 0, z: -5 })
-scene.add(pusher)
+//scene.add(pusher)
 
 const bouncer = bounce({ x: 0, y: 0, z: -10 })
-scene.add(bouncer)
+//scene.add(bouncer)
 
-const pullers = [puller, pusher]
-const bouncers = [bouncer]
+const pullers = [puller/*, pusher*/]
+const bouncers = [/*bouncer*/]
 
 let start = false;
-let direction = new THREE.Vector3(0, 0, -1);
-document.body.onkeyup = function (e) {
-    if (e.key == " ") {
-        b.userData.velocity.dx = direction.x * 0.01
-        b.userData.velocity.dy = direction.y * 0.01
-        b.userData.velocity.dz = direction.z * 0.01
-        start = true;
-    }
-}
+let initialSpeed = 0.1
+
+let selectStart;
+controller1.addEventListener("selectstart", () => {
+    const v = new THREE.Vector3()
+    controller1.getWorldDirection(v)
+
+    const dir = v.multiplyScalar(-1)
+    dir.normalize()
+    b.position.copy(controller1.position.add(dir))
+    selectStart = new Date().getTime()
+    start = false
+})
+
+controller1.addEventListener("selectend", () => {
+
+    const now = new Date().getTime()
+
+    const pressedFor = (now - selectStart) / 1000
+    const speed = (initialSpeed * pressedFor)
+
+    const v = new THREE.Vector3()
+    controller1.getWorldDirection(v)
+
+    const dir = v.multiplyScalar(-1)
+    dir.normalize()
+    b.position.copy(controller1.position.add(dir))
+    b.userData.velocity.dx = dir.x * speed
+    b.userData.velocity.dy = dir.y * speed
+    b.userData.velocity.dz = dir.z * speed
+    start = true;
+})
 
 function render() {
-    requestAnimationFrame(render)
 
     if (start) {
         for (let p of pullers) {
@@ -169,27 +226,14 @@ function render() {
         b.position.y += dy;
         b.position.z += dz;
     } else {
-
-        const v = new THREE.Vector3(0, 0, -2);
-
-
-        v.applyEuler(camera.rotation)
-
-        b.position.x = v.x;
-        b.position.y = v.y;
-        b.position.z = v.z;
-
-        const v1 = new THREE.Vector3(0, 0, -4);
-
-        v1.applyEuler(camera.rotation)
-        b.lookAt(v1)
-
-        direction = v1.sub(v1).normalize()
+        const v = new THREE.Vector3()
+        controller1.getWorldDirection(v)
+        v.normalize()
+        b.position.copy(controller1.position.add(v.multiplyScalar(-1)))
     }
 
-
-    // controls.update(delta)
     renderer.render(scene, camera)
 }
 
-render()
+
+renderer.setAnimationLoop(render);
